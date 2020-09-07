@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-# import copy
+from gevent import monkey
+
+monkey.patch_all()
 import sys
 import os
 import time
@@ -9,8 +11,7 @@ from selenium import webdriver
 # from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import ElementNotInteractableException
 import pymongo
-
-# import uuid
+import gevent
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(BASE_DIR))
@@ -69,7 +70,7 @@ class RedHatCrawler:
         except Exception as e:
             raise e
         logger.info(f"login_title: {self.driver.title}")
-        time.sleep(5)
+        self.driver.implicitly_wait(30)
         try:
             # 输入用户名
             self.driver.find_element_by_xpath("//div[@class='field']/input[@id='username']").send_keys(self.username)
@@ -250,6 +251,24 @@ class RedHatCrawler:
         # 注意这个driver退出的位置
         self.driver.quit()
 
+    def craw_sole_url_data(self, ver_no, url, save_path):
+        """爬取单条url数据"""
+        logger.info("===>>>开始爬取{ver_no}...".format(ver_no=ver_no))
+        cookie = self.get_target_page_cookie(url)
+        filename = "".join([save_path, "\\", "changelog-", str(constants.TODAY), "-", ver_no, ".txt"])
+        self.save_target_data(cookie, url, filename)
+        logger.info("===>>>{ver_no}更新日志已保存".format(ver_no=ver_no))
+        time.sleep(5)
+
+    def async_craw_data(self, items, save_path):
+        """异步抓取并保存数据"""
+        events = list()
+        for ver_no, url in items:
+            gl_obj = gevent.spawn(self.craw_sole_url_data(ver_no, url, save_path))
+            events.append(gl_obj)
+
+        return events
+
     def get_latest_rhel_data(self, items, save_path):
         """爬取最新的"""
         self.craw_data(items, save_path)
@@ -290,9 +309,14 @@ class RedHatCrawler:
             self.save_url_to_mongodb(latest_items, rhel_ver)
             return
 
-        self.craw_data(zip(self.ver_nos, self.urls), save_path)
-        # if self.failed_urls:
-        #     self.get_lost_data()
+        zip_objs = zip(self.ver_nos, self.urls)
+        # 同步方式
+        # self.craw_data(zip_objs, save_path)
+        # 异步方式
+        events = self.async_craw_data(zip_objs, save_path)
+        gevent.joinall(events)
+        # 注意这个driver退出的位置
+        self.driver.quit()
         # 第一次爬完,将url存入mongodb
         self.save_url_to_mongodb(zip(self.ver_nos, self.urls), rhel_ver)
         # 标识量置为False,但是再次执行脚本,这里还是会为True, 无法持久化保存
