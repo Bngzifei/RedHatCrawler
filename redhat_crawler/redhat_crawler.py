@@ -37,7 +37,7 @@ class RedHatCrawler:
         # 静默模式
         # chrome_options.add_argument('--headless')
         # 解决 ERROR:browser_switcher_service.cc(238) 报错,添加下面的试用选项
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        # chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
 
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--disable-infobars')
@@ -54,14 +54,14 @@ class RedHatCrawler:
         self.username = username
         self.password = password
         self.failed_urls = list()
-        # 是否是首次爬
+        # 是否首次爬取
         self.is_first = parse_config.get_config()
         # 创建客户端
         self.client = pymongo.MongoClient(host='localhost', port=27017)
         self.ver_nos = list()
         self.urls = list()
 
-    @retry(reNum=5)
+    # @retry(reNum=5)
     def login_red_website(self):
         """登录red网站"""
         try:
@@ -150,39 +150,6 @@ class RedHatCrawler:
         except Exception as e:
             logger.info(e)
 
-    def get_rhel8_latest_data(self):
-        """爬取最新的rhel8"""
-
-        # 先登录
-        self.login_red_website()
-
-        version2urls = self.get_all_rhel_urls(self.rhel8_base_url)
-        url_suffix = [i for i in version2urls[0].values()][0]
-        url = "".join([constants.REDHAT_DOMAIN, url_suffix])
-        ver_no = [i for i in version2urls[0].keys()][0]
-        logger.info("===>>>开始爬取{ver_no}...".format(ver_no=ver_no))
-        cookie = self.get_target_page_cookie(url)
-        filename = "".join([constants.RHEL8_STORAGE_DIR, "changelog-", str(constants.TODAY), "-", ver_no, ".txt"])
-        self.save_target_data(cookie, url, filename)
-        logger.info("===>>>{ver_no}更新日志已保存".format(ver_no=ver_no))
-        self.driver.quit()
-
-    def get_rhel7_latest_data(self):
-        """爬取最新的rhel7"""
-
-        # 先登录
-        self.login_red_website()
-        version2urls = self.get_all_rhel_urls(self.rhel7_base_url)
-        url_suffix = [i for i in version2urls[0].values()][0]
-        url = "".join([constants.REDHAT_DOMAIN, url_suffix])
-        ver_no = [i for i in version2urls[0].keys()][0]
-        logger.info("===>>>开始爬取{ver_no}...".format(ver_no=ver_no))
-        cookie = self.get_target_page_cookie(url)
-        filename = "".join([constants.RHEL7_STORAGE_DIR, "changelog-", str(constants.TODAY), "-", ver_no, ".txt"])
-        self.save_target_data(cookie, url, filename)
-        logger.info("===>>>{ver_no}更新日志已保存".format(ver_no=ver_no))
-        self.driver.quit()
-
     def save_url_to_mongodb(self, items, rhel_ver):
         """将url保存至mongodb"""
         logger.info(f"pymongo version: {pymongo.version}")
@@ -247,6 +214,7 @@ class RedHatCrawler:
 
     def get_rhel_urls(self, rhel_ver):
         """获取rhel所有url"""
+
         # 先登录,登录后携带cookie进行抓取数据
         self.login_red_website()
         if rhel_ver == "rhel8":
@@ -261,21 +229,7 @@ class RedHatCrawler:
             self.ver_nos.append(ver_no)
             self.urls.append(url)
 
-        # 实际上只存ver_no即可
-        # item = {ver_no:url}  这种数据结构更好一点
-        # 下面这种递归慎用
-        # if all([ver_nos, urls]):
-        #     return zip(ver_nos, urls)
-        # else:
-        #     self.get_rhel8_urls()
         logger.info(self.ver_nos)
-        # 不需要了,直接下面调用self.urls即可
-        # if self.ver_nos and self.urls:
-        #     obj = zip(self.ver_nos, self.urls)
-        #     return obj
-        # else:
-        #     import pdb;pdb.set_trace()
-        #     return False
 
     def craw_data(self, items, save_path):
         """抓取并保存数据"""
@@ -289,7 +243,6 @@ class RedHatCrawler:
             logger.info("===>>>开始爬取{ver_no}...".format(ver_no=ver_no))
             cookie = self.get_target_page_cookie(url)
             filename = "".join([save_path, "\\", "changelog-", str(constants.TODAY), "-", ver_no, ".txt"])
-            import pdb;pdb.set_trace()
             self.save_target_data(cookie, url, filename)
             logger.info("===>>>{ver_no}更新日志已保存".format(ver_no=ver_no))
             time.sleep(5)
@@ -311,8 +264,8 @@ class RedHatCrawler:
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
+        # 获取爬取链接
         self.get_rhel_urls(rhel_ver)
-        # items = zip(self.ver_nos, self.urls)
         # 取出网页爬取的真实url-ver_no
         objs = [(ver_no, url) for ver_no, url in zip(self.ver_nos, self.urls)]
         ver_nos = list()
@@ -320,7 +273,7 @@ class RedHatCrawler:
             ver_no = obj[0]
             ver_nos.append(ver_no)
 
-        if self.is_first == "false":
+        if self.is_first == str(0):
             # 这里的问题:查询的时候应该根据指定的版本号去对应的表查询
             db_ver_nos = self.query_all_ver_nos(rhel_ver)
             logger.info(f"当前网页的版本号: {ver_nos}")
@@ -344,46 +297,8 @@ class RedHatCrawler:
         self.save_url_to_mongodb(zip(self.ver_nos, self.urls), rhel_ver)
         # 标识量置为False,但是再次执行脚本,这里还是会为True, 无法持久化保存
         # 所以:办法 1、存入数据库这个变量 2、存入配置文件
-        self.is_first = "false"
+        self.is_first = "0"
         parse_config.update_config(self.is_first)
-
-    def get_all_rhel7_data(self):
-        """爬取所有rhel7的数据"""
-
-        # 先登录
-        self.login_red_website()
-        version2urls = self.get_all_rhel_urls(self.rhel7_base_url)
-
-        for item in version2urls:
-            url_suffix = [i for i in item.values()][0]
-            url = "".join([constants.REDHAT_DOMAIN, url_suffix])
-            ver_no = [i for i in item.keys()][0]
-            logger.info("===>>>开始爬取{ver_no}...".format(ver_no=ver_no))
-            cookie = self.get_target_page_cookie(url)
-            filename = "".join([constants.RHEL7_STORAGE_DIR, str(constants.TODAY), "-", ver_no, ".txt"])
-            self.save_target_data(cookie, url, filename)
-            logger.info("===>>>{ver_no}更新日志已保存".format(ver_no=ver_no))
-            time.sleep(5)
-        self.driver.quit()
-        logger.info("============开始爬取失败的url==========================")
-        if self.failed_urls:
-            self.get_lost_data()
-
-    def get_lost_data(self):
-        """爬取丢失的数据"""
-        if self.failed_urls:
-            self.login_red_website()
-            for url in self.failed_urls:
-                ver_no = url.split("/")[-4]
-                logger.info("===>>>开始爬取{ver_no}...".format(ver_no=ver_no))
-                cookie = self.get_target_page_cookie(url)
-                filename = "".join([constants.RHEL7_STORAGE_DIR, "changelog-", str(constants.TODAY), "-", ver_no, ".txt"])
-                self.save_target_data(cookie, url, filename)
-                logger.info("===>>>{ver_no}更新日志已保存".format(ver_no=ver_no))
-                time.sleep(5)
-            self.driver.quit()
-        else:
-            pass
 
 
 @time_it
@@ -391,7 +306,6 @@ def main():
     red_spider = RedHatCrawler(constants.LOGIN_URL, constants.USERNAME, constants.PASSWORD)
     version = parse_config.get_rhel_version()
     red_spider.get_all_rhel_data(version)
-    # red_spider.get_lost_data()
 
 
 if __name__ == '__main__':
