@@ -135,9 +135,15 @@ class RedHatCrawler:
         """异步请求"""
         # 注意下面必须使用  async with 进行申明
         async with aiohttp.ClientSession(headers=headers) as session:
-            response = await session.get(url)
-            result = await response.text()
-            return result
+            # 原来的写法:
+            # response = await session.get(url)
+            # result = await response.text()
+            # return result
+
+            # 更好的写法:
+            async with session.get(url) as response:
+                result = await response.text()
+                return result
 
     @retry(reNum=5)
     async def save_target_data(self, cookie, target_url, filename):
